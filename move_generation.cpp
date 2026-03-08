@@ -82,6 +82,70 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
             // 6. Clear the processed knight and move to the next one
             knights_copy &= (knights_copy - 1); 
         }
+
+        //BIshops moves: RAY CASTING METHODS:
+        uint64_t bishops_copy = state.w_bishops;
+        // Process each bishop one by one to preserve the exact 'src' square
+        while (bishops_copy) {
+            int src = __builtin_ctzll(bishops_copy);
+            uint64_t single_bishop = (1ULL << src);
+            uint64_t targets = 0;
+            uint64_t ray;
+
+            // 1. Up-Left Ray (Left Shift by 5)
+            ray = (single_bishop & NOT_A_FILE) << 5;
+            while (ray & BOARD_MASK) {        // Enforce the 36-bit boundary!
+                if (ray & state.w_occ) break; // Blocked by friendly piece -> stop ray
+                
+                targets |= ray;               // It's empty or an enemy -> valid square
+                
+                if (ray & state.b_occ) break; // Captured an enemy piece -> stop ray
+                
+                ray = (ray & NOT_A_FILE) << 5; // Step the ray one more square Up-Left
+            }
+
+            // 2. Up-Right Ray (Left Shift by 7)
+            ray = (single_bishop & NOT_F_FILE) << 7;
+            while (ray & BOARD_MASK) {
+                if (ray & state.w_occ) break;
+                targets |= ray;
+                if (ray & state.b_occ) break;
+                ray = (ray & NOT_F_FILE) << 7;
+            }
+
+            // 3. Down-Right Ray (Right Shift by 5)
+            // Note: Right shifts drop bits into oblivion, so they don't need BOARD_MASK
+            ray = (single_bishop & NOT_F_FILE) >> 5; 
+            while (ray) { 
+                if (ray & state.w_occ) break;
+                targets |= ray;
+                if (ray & state.b_occ) break;
+                ray = (ray & NOT_F_FILE) >> 5;
+            }
+
+            // 4. Down-Left Ray (Right Shift by 7)
+            ray = (single_bishop & NOT_A_FILE) >> 7;
+            while (ray) {
+                if (ray & state.w_occ) break;
+                targets |= ray;
+                if (ray & state.b_occ) break;
+                ray = (ray & NOT_A_FILE) >> 7;
+            }
+
+            // Extract all valid destinations for THIS specific bishop
+            while (targets) {
+                int dst = __builtin_ctzll(targets);
+                
+                // Flag is 1 if destination contains a black piece, 0 otherwise
+                int flag = (state.b_occ & (1ULL << dst)) ? 1 : 0; 
+                
+                moves.push_back(encode_move(src, dst, flag));
+                
+                targets &= (targets - 1); // Erase the processed target
+            }
+
+            bishops_copy &= (bishops_copy - 1); // Erase the processed bishop, move to next
+        }
     } else {
         // TODO: Implement Black's move generation (shifting DOWN, e.g., >> 6)
     }
