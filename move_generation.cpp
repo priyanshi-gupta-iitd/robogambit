@@ -93,7 +93,7 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
             uint64_t ray;
 
             // 1. Up-Left Ray (Left Shift by 5)
-            ray = (single_bishop & NOT_A_FILE) << 5;
+            ray = (single_bishop & NOT_A_FILE) << 5; //single bishop so dont have to calculate ray by anding it to the boardmask, it can never be in both places at the same time
             while (ray & BOARD_MASK) {        // Enforce the 36-bit boundary!
                 if (ray & state.w_occ) break; // Blocked by friendly piece -> stop ray
                 
@@ -146,6 +146,115 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
 
             bishops_copy &= (bishops_copy - 1); // Erase the processed bishop, move to next
         }
+    
+        if (state.w_queen){//Queen (no rooks) also ray casting, same as bishop + horizontal movements too, may have to isolate individual due to piece promotion: NOPE, PIECE PROMOTION CAN ONLY HAPPEN WHEN THAT PIECE ISNT THERE, THUS AT MAX 1 QUEEEN THROUGHOUT THE GAME
+ 
+        int src = __builtin_ctzll(state.w_queen);
+        uint64_t single_queen =  state.w_queen;
+        uint64_t targets = 0;
+        uint64_t ray;
+
+        // 1. Up-Left Ray (Left Shift by 5)
+        ray = (single_queen & NOT_A_FILE) << 5; //single queen so dont have to calculate ray by anding it to the boardmask, it can never be in both places at the same time
+        while (ray & BOARD_MASK) {        // Enforce the 36-bit boundary!
+            if (ray & state.w_occ) break; // Blocked by friendly piece -> stop ray
+            
+            targets |= ray;               // It's empty or an enemy -> valid square
+            
+            if (ray & state.b_occ) break; // Captured an enemy piece -> stop ray
+            
+            ray = (ray & NOT_A_FILE) << 5; // Step the ray one more square Up-Left
+        }
+
+        // 2. Up-Right Ray (Left Shift by 7)
+        ray = (single_queen & NOT_F_FILE) << 7;
+        while (ray & BOARD_MASK) {
+            if (ray & state.w_occ) break;
+            targets |= ray;
+            if (ray & state.b_occ) break;
+            ray = (ray & NOT_F_FILE) << 7;
+        }
+
+        // 3. Down-Right Ray (Right Shift by 5)
+        // Note: Right shifts drop bits into oblivion, so they don't need BOARD_MASK
+        ray = (single_queen & NOT_F_FILE) >> 5; 
+        while (ray) { 
+            if (ray & state.w_occ) break;
+            targets |= ray;
+            if (ray & state.b_occ) break;
+            ray = (ray & NOT_F_FILE) >> 5;
+        }
+
+        // 4. Down-Left Ray (Right Shift by 7)
+        ray = (single_queen & NOT_A_FILE) >> 7;
+        while (ray) {
+            if (ray & state.w_occ) break;
+            targets |= ray;
+            if (ray & state.b_occ) break;
+            ray = (ray & NOT_A_FILE) >> 7;
+        }
+
+        // 5. Up Ray (Left Shift by 6)
+        ray = (single_queen) << 6; //single queen so dont have to calculate ray by anding it to the boardmask, it can never be in both places at the same time
+        while (ray & BOARD_MASK) {        // Enforce the 36-bit boundary!
+            if (ray & state.w_occ) break; // Blocked by friendly piece -> stop ray
+            
+            targets |= ray;               // It's empty or an enemy -> valid square
+            
+            if (ray & state.b_occ) break; // Captured an enemy piece -> stop ray
+            
+            ray = (ray) << 6; // Step the ray one more square Up
+        }
+
+        //6. Down Ray (Right Shift by 6)
+        ray = (single_queen) >> 6; //single queen so dont have to calculate ray by anding it to the boardmask, it can never be in both places at the same time
+        while (ray & BOARD_MASK) {        // Enforce the 36-bit boundary!
+            if (ray & state.w_occ) break; // Blocked by friendly piece -> stop ray
+            
+            targets |= ray;               // It's empty or an enemy -> valid square
+            
+            if (ray & state.b_occ) break; // Captured an enemy piece -> stop ray
+            
+            ray = (ray) >> 6; // Step the ray one more square Down
+        }
+
+        // 7. Left Ray (Right Shift by 1)
+        ray = (single_queen) >> 1; //single queen so dont have to calculate ray by anding it to the boardmask, it can never be in both places at the same time
+        while (ray & BOARD_MASK) {        // Enforce the 36-bit boundary!
+            if (ray & state.w_occ) break; // Blocked by friendly piece -> stop ray
+            
+            targets |= ray;               // It's empty or an enemy -> valid square
+            
+            if (ray & state.b_occ) break; // Captured an enemy piece -> stop ray
+            
+            ray = (ray & NOT_A_FILE) >> 1; // Step the ray one more square Left
+        }
+
+        //8. Right Ray (Left Shift by 1)
+        ray = (single_queen & NOT_F_FILE) << 1; //single queen so dont have to calculate ray by anding it to the boardmask, it can never be in both places at the same time
+        while (ray) {        // Enforce the 36-bit boundary!
+            if (ray & state.w_occ) break; // Blocked by friendly piece -> stop ray
+            
+            targets |= ray;               // It's empty or an enemy -> valid square
+            
+            if (ray & state.b_occ) break; // Captured an enemy piece -> stop ray
+            
+            ray = (ray & NOT_F_FILE) << 1; // Step the ray one more square Right
+        }
+
+        // Extract all valid destinations for THIS queen
+        while (targets) {
+            int dst = __builtin_ctzll(targets);
+            
+            // Flag is 1 if destination contains a black piece, 0 otherwise
+            int flag = (state.b_occ & (1ULL << dst)) ? 1 : 0; 
+            
+            moves.push_back(encode_move(src, dst, flag));
+            
+            targets &= (targets - 1); // Erase the processed target
+        }
+        }
+    
     } else {
         // TODO: Implement Black's move generation (shifting DOWN, e.g., >> 6)
     }
