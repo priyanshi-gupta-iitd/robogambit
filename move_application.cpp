@@ -4,6 +4,8 @@
 // 3. MOVE APPLICATION
 // ---------------------------------------------------------------------------
 
+//IMPORTANT!
+//YET TO ACCOMODATE PAWN PROMOTION HERE!
 void apply_move (BitBoardState& state, uint16_t move, int side) {
     int src = get_src(move);
     int dst = get_dst(move);
@@ -79,7 +81,9 @@ void apply_move (BitBoardState& state, uint16_t move, int side) {
             state.w_queen &= ~dst_mask;
         }
     }
+    // 36 bits of 1s. Masks out the phantom bits 36-63.
+    const uint64_t BOARD_MASK = 0xFFFFFFFFFULL;
 
     // Update global empty squares
-    state.empty = ~(state.w_occ | state.b_occ);
+    state.empty = ~(state.w_occ | state.b_occ) & BOARD_MASK;
 }
