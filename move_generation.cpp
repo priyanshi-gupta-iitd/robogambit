@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // 4. MOVE GENERATION
 // ---------------------------------------------------------------------------
-#include "move_application.h"
+#include "move_generation.h"
 
 std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
     std::vector<uint16_t> moves;
@@ -254,7 +254,41 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
             targets &= (targets - 1); // Erase the processed target
         }
         }
-    
+        
+        if (state.w_king) {
+        int src = __builtin_ctzll(state.w_king);
+        uint64_t king = state.w_king;
+        uint64_t targets = 0;
+        
+        // The master mask: anywhere on the board that isn't occupied by our own team
+        uint64_t valid_squares = ~state.w_occ & BOARD_MASK;
+
+        // 1. Up-Left (Shift Left by 5, protect A-File)
+        targets |= ((king & NOT_A_FILE) << 5) & valid_squares;
+
+        // 2. Up (Shift Left by 6, no file protection needed)
+        targets |= (king << 6) & valid_squares;
+
+        // 4. DOwn (Shift right by 6, no file protection needed)
+        targets |= (king >> 6) & valid_squares;
+
+        // 1. Down-Left (Shift Rt by 7, protect A-File)
+        targets |= ((king & NOT_A_FILE) >> 7) & valid_squares;
+
+        // 1. Up right (Shift left by 7, protect F-File)
+        targets |= ((king & NOT_F_FILE) << 7) & valid_squares;
+
+         // 1. Down right (Shift right by 5, protect F-File)
+        targets |= ((king & NOT_F_FILE) >> 5) & valid_squares;
+
+        // Finally, extract the targets
+        while (targets) {
+            int dst = __builtin_ctzll(targets);
+            int flag = (state.b_occ & (1ULL << dst)) ? 1 : 0; 
+            moves.push_back(encode_move(src, dst, flag));
+            targets &= (targets - 1); 
+        }
+        }
     } else {
         // TODO: Implement Black's move generation (shifting DOWN, e.g., >> 6)
     }
