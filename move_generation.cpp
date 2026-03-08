@@ -219,7 +219,7 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
         }
 
         // 7. Left Ray (Right Shift by 1)
-        ray = (single_queen) >> 1; //single queen so dont have to calculate ray by anding it to the boardmask, it can never be in both places at the same time
+        ray = (single_queen & NOT_A_FILE) >> 1; //single queen so dont have to calculate ray by anding it to the boardmask, it can never be in both places at the same time
         while (ray & BOARD_MASK) {        // Enforce the 36-bit boundary!
             if (ray & state.w_occ) break; // Blocked by friendly piece -> stop ray
             
@@ -280,7 +280,12 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
 
          // 1. Down right (Shift right by 5, protect F-File)
         targets |= ((king & NOT_F_FILE) >> 5) & valid_squares;
+        
+        // 1. Left (Shift Rt by 1, protect A-File)
+        targets |= ((king & NOT_A_FILE) >> 1) & valid_squares;
 
+        // 1. Up right (Shift left by 1, protect F-File)
+        targets |= ((king & NOT_F_FILE) << 1) & valid_squares;
         // Finally, extract the targets
         while (targets) {
             int dst = __builtin_ctzll(targets);
@@ -289,8 +294,224 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
             targets &= (targets - 1); 
         }
         }
-    } else {
-        // TODO: Implement Black's move generation (shifting DOWN, e.g., >> 6)
+    } else { // Black
+        // --- PAWN PUSHES ---
+        // Black pawns move DOWN (-6). Right shift by 6.
+        uint64_t single_pushes = (state.b_pawns >> 6) & state.empty;
+        
+        uint64_t pushes_copy = single_pushes;
+        while (pushes_copy) {
+            int dst = __builtin_ctzll(pushes_copy);
+            int src = dst + 6; // Reverse the downward shift to find origin
+            moves.push_back(encode_move(src, dst));
+            pushes_copy &= (pushes_copy - 1);
+        }
+
+        // --- PAWN CAPTURES ---
+        // Down-Left (Right shift by 7). Protect the A-File.
+        uint64_t down_left_captures = ((state.b_pawns & NOT_A_FILE) >> 7) & state.w_occ;
+        uint64_t dl_captures_copy = down_left_captures;
+        while (dl_captures_copy) {
+            int dst = __builtin_ctzll(dl_captures_copy);
+            int src = dst + 7; 
+            moves.push_back(encode_move(src, dst, 1)); // 1 for capture flag
+            dl_captures_copy &= (dl_captures_copy - 1); 
+        }
+
+        // Down-Right (Right shift by 5). Protect the F-File.
+        uint64_t down_right_captures = ((state.b_pawns & NOT_F_FILE) >> 5) & state.w_occ;
+        uint64_t dr_captures_copy = down_right_captures;
+        while (dr_captures_copy) {
+            int dst = __builtin_ctzll(dr_captures_copy);
+            int src = dst + 5; 
+            moves.push_back(encode_move(src, dst, 1));
+            dr_captures_copy &= (dr_captures_copy - 1); 
+        }
+
+        // --- KNIGHT MOVES ---
+        uint64_t knights_copy = state.b_knights;
+        // Valid squares: anywhere on the board NOT occupied by our own Black pieces
+        uint64_t valid_squares = ~state.b_occ & BOARD_MASK; 
+
+        while (knights_copy) {
+            int src = __builtin_ctzll(knights_copy);
+            uint64_t single_knight = (1ULL << src);
+            uint64_t targets = 0;
+            
+            // The 8 shift geometries are identical for White and Black
+            targets |= ((single_knight & NOT_A_FILE)  << 11);
+            targets |= ((single_knight & NOT_F_FILE)  << 13);
+            targets |= ((single_knight & NOT_AB_FILE) << 4);
+            targets |= ((single_knight & NOT_EF_FILE) << 8);
+            targets |= ((single_knight & NOT_A_FILE)  >> 11);
+            targets |= ((single_knight & NOT_F_FILE)  >> 13);
+            targets |= ((single_knight & NOT_AB_FILE) >> 4);
+            targets |= ((single_knight & NOT_EF_FILE) >> 8);
+            
+            targets &= valid_squares;
+            
+            while (targets) {
+                int dst = __builtin_ctzll(targets);
+                // Set flag to 1 if we are landing on a White piece
+                int flag = (state.w_occ & (1ULL << dst)) ? 1 : 0;
+                moves.push_back(encode_move(src, dst, flag));
+                targets &= (targets - 1); 
+            }
+            knights_copy &= (knights_copy - 1); 
+        }
+
+        // --- BISHOP MOVES ---
+        uint64_t bishops_copy = state.b_bishops;
+        while (bishops_copy) {
+            int src = __builtin_ctzll(bishops_copy);
+            uint64_t single_bishop = (1ULL << src);
+            uint64_t targets = 0;
+            uint64_t ray;
+
+            // 1. Up-Left (+5)
+            ray = (single_bishop & NOT_A_FILE) << 5;
+            while (ray & BOARD_MASK) {        
+                if (ray & state.b_occ) break; // Blocked by BLACK -> stop
+                targets |= ray;               
+                if (ray & state.w_occ) break; // Captured WHITE -> stop
+                ray = (ray & NOT_A_FILE) << 5; 
+            }
+            // 2. Up-Right (+7)
+            ray = (single_bishop & NOT_F_FILE) << 7;
+            while (ray & BOARD_MASK) {
+                if (ray & state.b_occ) break;
+                targets |= ray;
+                if (ray & state.w_occ) break;
+                ray = (ray & NOT_F_FILE) << 7;
+            }
+            // 3. Down-Right (-5)
+            ray = (single_bishop & NOT_F_FILE) >> 5; 
+            while (ray) { 
+                if (ray & state.b_occ) break;
+                targets |= ray;
+                if (ray & state.w_occ) break;
+                ray = (ray & NOT_F_FILE) >> 5;
+            }
+            // 4. Down-Left (-7)
+            ray = (single_bishop & NOT_A_FILE) >> 7;
+            while (ray) {
+                if (ray & state.b_occ) break;
+                targets |= ray;
+                if (ray & state.w_occ) break;
+                ray = (ray & NOT_A_FILE) >> 7;
+            }
+
+            while (targets) {
+                int dst = __builtin_ctzll(targets);
+                int flag = (state.w_occ & (1ULL << dst)) ? 1 : 0; 
+                moves.push_back(encode_move(src, dst, flag));
+                targets &= (targets - 1); 
+            }
+            bishops_copy &= (bishops_copy - 1); 
+        }
+        
+        // --- QUEEN MOVES ---
+        if (state.b_queen) {
+            int src = __builtin_ctzll(state.b_queen);
+            uint64_t single_queen = state.b_queen;
+            uint64_t targets = 0;
+            uint64_t ray;
+
+            // Diagonals
+            ray = (single_queen & NOT_A_FILE) << 5;
+            while (ray & BOARD_MASK) {        
+                if (ray & state.b_occ) break; 
+                targets |= ray;               
+                if (ray & state.w_occ) break; 
+                ray = (ray & NOT_A_FILE) << 5; 
+            }
+            ray = (single_queen & NOT_F_FILE) << 7;
+            while (ray & BOARD_MASK) {
+                if (ray & state.b_occ) break;
+                targets |= ray;
+                if (ray & state.w_occ) break;
+                ray = (ray & NOT_F_FILE) << 7;
+            }
+            ray = (single_queen & NOT_F_FILE) >> 5; 
+            while (ray) { 
+                if (ray & state.b_occ) break;
+                targets |= ray;
+                if (ray & state.w_occ) break;
+                ray = (ray & NOT_F_FILE) >> 5;
+            }
+            ray = (single_queen & NOT_A_FILE) >> 7;
+            while (ray) {
+                if (ray & state.b_occ) break;
+                targets |= ray;
+                if (ray & state.w_occ) break;
+                ray = (ray & NOT_A_FILE) >> 7;
+            }
+
+            // Straights
+            ray = single_queen << 6; // Up
+            while (ray & BOARD_MASK) {        
+                if (ray & state.b_occ) break; 
+                targets |= ray;               
+                if (ray & state.w_occ) break; 
+                ray <<= 6; 
+            }
+            ray = single_queen >> 6; // Down
+            while (ray) {        
+                if (ray & state.b_occ) break; 
+                targets |= ray;               
+                if (ray & state.w_occ) break; 
+                ray >>= 6; 
+            }
+            ray = (single_queen & NOT_A_FILE) >> 1; // Left
+            while (ray) {        
+                if (ray & state.b_occ) break; 
+                targets |= ray;               
+                if (ray & state.w_occ) break; 
+                ray = (ray & NOT_A_FILE) >> 1; 
+            }
+            ray = (single_queen & NOT_F_FILE) << 1; // Right
+            while (ray & BOARD_MASK) {        
+                if (ray & state.b_occ) break; 
+                targets |= ray;               
+                if (ray & state.w_occ) break; 
+                ray = (ray & NOT_F_FILE) << 1; 
+            }
+
+            while (targets) {
+                int dst = __builtin_ctzll(targets);
+                int flag = (state.w_occ & (1ULL << dst)) ? 1 : 0; 
+                moves.push_back(encode_move(src, dst, flag));
+                targets &= (targets - 1); 
+            }
+        }
+        
+        // --- KING MOVES ---
+        if (state.b_king) {
+            int src = __builtin_ctzll(state.b_king);
+            uint64_t king = state.b_king;
+            uint64_t targets = 0;
+            
+            uint64_t valid_squares = ~state.b_occ & BOARD_MASK;
+
+            targets |= ((king & NOT_A_FILE) << 5) & valid_squares; // Up-Left
+            targets |= (king << 6) & valid_squares;                // Up
+            targets |= ((king & NOT_F_FILE) << 7) & valid_squares; // Up-Right
+            targets |= ((king & NOT_F_FILE) >> 5) & valid_squares; // Down-Right
+            targets |= (king >> 6) & valid_squares;                // Down
+            targets |= ((king & NOT_A_FILE) >> 7) & valid_squares; // Down-Left
+            
+            // NOTE: I added the horizontal shifts you missed for White here!
+            // Make sure you add these two lines to your White King logic as well!
+            targets |= ((king & NOT_A_FILE) >> 1) & valid_squares; // Left
+            targets |= ((king & NOT_F_FILE) << 1) & valid_squares; // Right
+
+            while (targets) {
+                int dst = __builtin_ctzll(targets);
+                int flag = (state.w_occ & (1ULL << dst)) ? 1 : 0; 
+                moves.push_back(encode_move(src, dst, flag));
+                targets &= (targets - 1); 
+            }
+        }
     }
 
     return moves;
