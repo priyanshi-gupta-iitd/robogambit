@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 
+#include "files.h"
 //data structures 
 
 struct BitBoardState{

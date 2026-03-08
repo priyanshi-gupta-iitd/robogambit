@@ -82,7 +82,6 @@ void apply_move (BitBoardState& state, uint16_t move, int side) {
         }
     }
     // 36 bits of 1s. Masks out the phantom bits 36-63.
-    const uint64_t BOARD_MASK = 0xFFFFFFFFFULL;
 
     // Update global empty squares
     state.empty = ~(state.w_occ | state.b_occ) & BOARD_MASK;
