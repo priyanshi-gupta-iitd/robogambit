@@ -77,7 +77,7 @@ def draw_pieces(screen, board):
     # Initialize a font. We pass a list of fallback fonts known to support chess Unicode.
     # The size is scaled slightly smaller than the square to fit perfectly.
     font_size = int(SQUARE_SIZE * 0.85)
-    font = pygame.font.SysFont(['segoeuisymbol', 'arial', 'freeserif', 'dejavusans'], font_size)
+    font = pygame.font.Font("DejaVuSans.ttf", font_size)
 
     for np_row in range(BOARD_SIZE):
         for np_col in range(BOARD_SIZE):
