@@ -107,23 +107,99 @@ def draw_game_state(screen, board, selected_sq):
 # Interaction Helpers
 # ---------------------------------------------------------------------------
 
-def apply_move_locally(board, src_tuple, dst_tuple):
-    """Applies a human click-move to the numpy array."""
+def count_pieces(board, piece_id):
+    """Count occurrences of a piece_id on the board."""
+    return int(np.count_nonzero(board == piece_id))
+
+def get_promotion_choices(board, is_white):
+    """Return list of (piece_id, label) the pawn can promote to (only captured pieces)."""
+    choices = []
+    if is_white:
+        if count_pieces(board, 2) < 2: choices.append((2, '♘ Knight'))
+        if count_pieces(board, 3) < 2: choices.append((3, '♗ Bishop'))
+        if count_pieces(board, 4) < 1: choices.append((4, '♕ Queen'))
+    else:
+        if count_pieces(board, 7) < 2: choices.append((7, '♞ Knight'))
+        if count_pieces(board, 8) < 2: choices.append((8, '♝ Bishop'))
+        if count_pieces(board, 9) < 1: choices.append((9, '♛ Queen'))
+    return choices
+
+def draw_promotion_popup(screen, choices):
+    """Draw a simple promotion selection popup and return the chosen piece_id."""
+    font = pygame.font.SysFont(None, 36)
+    popup_w, popup_h = 200, 50 * len(choices)
+    popup_x = (WIDTH - popup_w) // 2
+    popup_y = (HEIGHT - popup_h) // 2
+
+    selecting = True
+    while selecting:
+        # Draw popup background
+        pygame.draw.rect(screen, (50, 50, 50), (popup_x, popup_y, popup_w, popup_h))
+        pygame.draw.rect(screen, (255, 255, 255), (popup_x, popup_y, popup_w, popup_h), 2)
+
+        rects = []
+        for i, (pid, label) in enumerate(choices):
+            r = pygame.Rect(popup_x, popup_y + i * 50, popup_w, 50)
+            rects.append((r, pid))
+            text = font.render(label, True, (255, 255, 255))
+            screen.blit(text, text.get_rect(center=r.center))
+
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                pos = pygame.mouse.get_pos()
+                for r, pid in rects:
+                    if r.collidepoint(pos):
+                        return pid
+    return choices[0][0]
+
+def apply_move_locally(board, src_tuple, dst_tuple, screen=None):
+    """Applies a human click-move to the numpy array, with promotion handling."""
     src_row, src_col = src_tuple
     dst_row, dst_col = dst_tuple
     
     piece = board[src_row][src_col]
+    is_white_piece = (piece == 1)  # white pawn
+    is_black_piece = (piece == 6)  # black pawn
+    
+    # Check if this is a pawn reaching the promotion rank
+    if (is_white_piece and dst_row == 5) or (is_black_piece and dst_row == 0):
+        choices = get_promotion_choices(board, is_white_piece)
+        if choices:
+            if screen is not None:
+                promo_id = draw_promotion_popup(screen, choices)
+            else:
+                promo_id = choices[0][0]  # fallback: pick first available
+            board[src_row][src_col] = 0
+            board[dst_row][dst_col] = promo_id
+            return board
+        else:
+            # No captured pieces to promote to — move is illegal, do nothing
+            return board
+    
     board[src_row][src_col] = 0
     board[dst_row][dst_col] = piece
     return board
 
 def parse_and_apply_engine_string(board, move_str):
-    """Applies the C++ engine's '1:A2->A3' string to the numpy array."""
+    """Applies the C++ engine's '1:A2->A3' or '1:A5->A6=4' string to the numpy array."""
     if move_str == "None" or move_str is None:
         return board
         
     parts = move_str.split(':')
-    cells = parts[1].split('->')
+    move_part = parts[1]  # e.g. "A5->A6=4" or "A2->A3"
+    
+    # Check for promotion suffix
+    promo_id = None
+    if '=' in move_part:
+        move_part, promo_str = move_part.split('=')
+        promo_id = int(promo_str)
+    
+    cells = move_part.split('->')
     
     # "A2" -> Col 0, Row 1
     src_col = ord(cells[0][0]) - ord('A')
@@ -131,9 +207,12 @@ def parse_and_apply_engine_string(board, move_str):
     dst_col = ord(cells[1][0]) - ord('A')
     dst_row = int(cells[1][1]) - 1
     
-    piece = board[src_row][src_col]
     board[src_row][src_col] = 0
-    board[dst_row][dst_col] = piece
+    if promo_id is not None:
+        board[dst_row][dst_col] = promo_id  # Place the promoted piece
+    else:
+        piece = int(parts[0])  # piece_id from the string prefix
+        board[dst_row][dst_col] = piece
     return board
 
 # ---------------------------------------------------------------------------
@@ -185,7 +264,7 @@ def main():
                     player_clicks.append(sq_selected)
                 
                 if len(player_clicks) == 2: # We have a Source and a Destination
-                    board = apply_move_locally(board, player_clicks[0], player_clicks[1])
+                    board = apply_move_locally(board, player_clicks[0], player_clicks[1], screen)
                     
                     # Reset clicks and pass turn
                     sq_selected = ()

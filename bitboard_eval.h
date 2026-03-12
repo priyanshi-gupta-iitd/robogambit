@@ -22,7 +22,10 @@ struct BitBoardState{
 // Move Encoding: 
 // Bits 0-5: Source Square (0-35)
 // Bits 6-11: Target Square (0-35)
-// Bits 12-15: Flags (e.g., 0 = quiet, 1 = capture, 2 = promotion)
+// Bits 12-15: Flags
+// 0 = quiet, 1 = capture
+// 2 = promote to knight, 3 = promote to bishop, 4 = promote to queen
+// 5 = capture-promote to knight, 6 = capture-promote to bishop, 7 = capture-promote to queen
 inline uint16_t encode_move(int src, int dst, int flag = 0) {
     return (src & 0x3F) | ((dst & 0x3F) << 6) | ((flag & 0xF) << 12);
 }

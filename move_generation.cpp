@@ -67,9 +67,9 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
     moves.reserve(40); // Pre-allocate to save memory reallocation time
 
     if (side == 1) { // White
-        // --- PAWN PUSHES ---
-        // Shift pawns UP by 6, mask with empty squares
-        uint64_t single_pushes = (state.w_pawns << 6) & state.empty;
+        // --- PAWN PUSHES (excluding promotions) ---
+        // Shift pawns UP by 6, mask with empty squares, exclude promotion rank
+        uint64_t single_pushes = (state.w_pawns << 6) & state.empty & ~RANK_6;
         
         uint64_t pushes_copy = single_pushes;
         while (pushes_copy) {
@@ -79,9 +79,8 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
             pushes_copy &= (pushes_copy - 1); //this is NOT address wala &, it is boolean, this erases the lowermost set bit in a vector. 
         }
 
-        // --- PAWN CAPTURES ---
-        // TODO: Implement (state.w_pawns << 5) & state.b_occ & NOT_A_FILE
-        uint64_t top_left_captures = ((state.w_pawns & NOT_A_FILE)<<5) & state.b_occ;
+        // --- PAWN CAPTURES (excluding promotions) ---
+        uint64_t top_left_captures = ((state.w_pawns & NOT_A_FILE)<<5) & state.b_occ & ~RANK_6;
         uint64_t tl_captures_copy = top_left_captures;
         while (tl_captures_copy) {
             int dst = __builtin_ctzll(tl_captures_copy);
@@ -89,14 +88,53 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
             moves.push_back(encode_move(src, dst, 1)); //1 for capture
             tl_captures_copy &= (tl_captures_copy - 1); //this is NOT address wala &, it is boolean, this erases the lowermost set bit in a vector. 
         }
-        // TODO: Implement (state.w_pawns << 7) & state.b_occ & NOT_F_FILE
-        uint64_t top_right_captures = ((state.w_pawns & NOT_F_FILE)<<7) & state.b_occ;
+        uint64_t top_right_captures = ((state.w_pawns & NOT_F_FILE)<<7) & state.b_occ & ~RANK_6;
         uint64_t tr_captures_copy = top_right_captures;
         while (tr_captures_copy) {
             int dst = __builtin_ctzll(tr_captures_copy);
             int src = dst - 7; // Reverse the shift to find the origin
             moves.push_back(encode_move(src, dst, 1));
             tr_captures_copy &= (tr_captures_copy - 1); //this is NOT address wala &, it is boolean, this erases the lowermost set bit in a vector. 
+        }
+
+        // --- PAWN PROMOTIONS ---
+        // A pawn promotes when it reaches rank 6 (bits 30-35).
+        // It can only promote to a piece type whose count is below the starting count.
+        bool can_promo_knight = popcount(state.w_knights) < 2;
+        bool can_promo_bishop = popcount(state.w_bishops) < 2;
+        bool can_promo_queen  = state.w_queen == 0;
+
+        if (can_promo_knight || can_promo_bishop || can_promo_queen) {
+            // Promotion pushes
+            uint64_t promo_pushes = (state.w_pawns << 6) & state.empty & RANK_6;
+            while (promo_pushes) {
+                int dst = __builtin_ctzll(promo_pushes);
+                int src = dst - 6;
+                if (can_promo_knight) moves.push_back(encode_move(src, dst, 2));
+                if (can_promo_bishop) moves.push_back(encode_move(src, dst, 3));
+                if (can_promo_queen)  moves.push_back(encode_move(src, dst, 4));
+                promo_pushes &= (promo_pushes - 1);
+            }
+            // Promotion captures (top-left)
+            uint64_t promo_tl = ((state.w_pawns & NOT_A_FILE) << 5) & state.b_occ & RANK_6;
+            while (promo_tl) {
+                int dst = __builtin_ctzll(promo_tl);
+                int src = dst - 5;
+                if (can_promo_knight) moves.push_back(encode_move(src, dst, 5));
+                if (can_promo_bishop) moves.push_back(encode_move(src, dst, 6));
+                if (can_promo_queen)  moves.push_back(encode_move(src, dst, 7));
+                promo_tl &= (promo_tl - 1);
+            }
+            // Promotion captures (top-right)
+            uint64_t promo_tr = ((state.w_pawns & NOT_F_FILE) << 7) & state.b_occ & RANK_6;
+            while (promo_tr) {
+                int dst = __builtin_ctzll(promo_tr);
+                int src = dst - 7;
+                if (can_promo_knight) moves.push_back(encode_move(src, dst, 5));
+                if (can_promo_bishop) moves.push_back(encode_move(src, dst, 6));
+                if (can_promo_queen)  moves.push_back(encode_move(src, dst, 7));
+                promo_tr &= (promo_tr - 1);
+            }
         }
 
         // --- KNIGHT MOVES ---
@@ -354,9 +392,9 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
         }
         }
     } else { // Black
-        // --- PAWN PUSHES ---
+        // --- PAWN PUSHES (excluding promotions) ---
         // Black pawns move DOWN (-6). Right shift by 6.
-        uint64_t single_pushes = (state.b_pawns >> 6) & state.empty;
+        uint64_t single_pushes = (state.b_pawns >> 6) & state.empty & ~RANK_1;
         
         uint64_t pushes_copy = single_pushes;
         while (pushes_copy) {
@@ -366,9 +404,9 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
             pushes_copy &= (pushes_copy - 1);
         }
 
-        // --- PAWN CAPTURES ---
+        // --- PAWN CAPTURES (excluding promotions) ---
         // Down-Left (Right shift by 7). Protect the A-File.
-        uint64_t down_left_captures = ((state.b_pawns & NOT_A_FILE) >> 7) & state.w_occ;
+        uint64_t down_left_captures = ((state.b_pawns & NOT_A_FILE) >> 7) & state.w_occ & ~RANK_1;
         uint64_t dl_captures_copy = down_left_captures;
         while (dl_captures_copy) {
             int dst = __builtin_ctzll(dl_captures_copy);
@@ -378,13 +416,53 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
         }
 
         // Down-Right (Right shift by 5). Protect the F-File.
-        uint64_t down_right_captures = ((state.b_pawns & NOT_F_FILE) >> 5) & state.w_occ;
+        uint64_t down_right_captures = ((state.b_pawns & NOT_F_FILE) >> 5) & state.w_occ & ~RANK_1;
         uint64_t dr_captures_copy = down_right_captures;
         while (dr_captures_copy) {
             int dst = __builtin_ctzll(dr_captures_copy);
             int src = dst + 5; 
             moves.push_back(encode_move(src, dst, 1));
             dr_captures_copy &= (dr_captures_copy - 1); 
+        }
+
+        // --- PAWN PROMOTIONS ---
+        // A black pawn promotes when it reaches rank 1 (bits 0-5).
+        // It can only promote to a piece type whose count is below the starting count.
+        bool can_promo_knight = popcount(state.b_knights) < 2;
+        bool can_promo_bishop = popcount(state.b_bishops) < 2;
+        bool can_promo_queen  = state.b_queen == 0;
+
+        if (can_promo_knight || can_promo_bishop || can_promo_queen) {
+            // Promotion pushes
+            uint64_t promo_pushes = (state.b_pawns >> 6) & state.empty & RANK_1;
+            while (promo_pushes) {
+                int dst = __builtin_ctzll(promo_pushes);
+                int src = dst + 6;
+                if (can_promo_knight) moves.push_back(encode_move(src, dst, 2));
+                if (can_promo_bishop) moves.push_back(encode_move(src, dst, 3));
+                if (can_promo_queen)  moves.push_back(encode_move(src, dst, 4));
+                promo_pushes &= (promo_pushes - 1);
+            }
+            // Promotion captures (down-left)
+            uint64_t promo_dl = ((state.b_pawns & NOT_A_FILE) >> 7) & state.w_occ & RANK_1;
+            while (promo_dl) {
+                int dst = __builtin_ctzll(promo_dl);
+                int src = dst + 7;
+                if (can_promo_knight) moves.push_back(encode_move(src, dst, 5));
+                if (can_promo_bishop) moves.push_back(encode_move(src, dst, 6));
+                if (can_promo_queen)  moves.push_back(encode_move(src, dst, 7));
+                promo_dl &= (promo_dl - 1);
+            }
+            // Promotion captures (down-right)
+            uint64_t promo_dr = ((state.b_pawns & NOT_F_FILE) >> 5) & state.w_occ & RANK_1;
+            while (promo_dr) {
+                int dst = __builtin_ctzll(promo_dr);
+                int src = dst + 5;
+                if (can_promo_knight) moves.push_back(encode_move(src, dst, 5));
+                if (can_promo_bishop) moves.push_back(encode_move(src, dst, 6));
+                if (can_promo_queen)  moves.push_back(encode_move(src, dst, 7));
+                promo_dr &= (promo_dr - 1);
+            }
         }
 
         // --- KNIGHT MOVES ---

@@ -13,4 +13,7 @@ constexpr uint64_t NOT_AB_FILE = ~AB_FILE;
 constexpr uint64_t NOT_F_FILE  = ~F_FILE;
 constexpr uint64_t NOT_EF_FILE = ~EF_FILE;
 
+constexpr uint64_t RANK_1 = 0x3FULL;            // bits 0-5   (Black promotion rank)
+constexpr uint64_t RANK_6 = 0x3FULL << 30;       // bits 30-35 (White promotion rank)
+
 const uint64_t BOARD_MASK = 0xFFFFFFFFFULL;

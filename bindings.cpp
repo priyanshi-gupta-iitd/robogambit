@@ -48,7 +48,7 @@ std::string find_move_cpp(py::array_t<int> numpy_board, bool is_white) {
     state.empty = ~(state.w_occ | state.b_occ) & BOARD_MASK;
 
     // 2. Call your root Minimax/Alpha-Beta search
-    int search_depth = 6; // Adjust based on your time limit
+    int search_depth = 8; // Adjust based on your time limit
     int side = is_white ? 1 : 0;
     
     // NOTE: You must ensure get_best_move is declared in move_generation.h 
@@ -63,6 +63,7 @@ std::string find_move_cpp(py::array_t<int> numpy_board, bool is_white) {
     // 3. Unpack the move for Python
     int src = best_move & 0x3F;
     int dst = (best_move >> 6) & 0x3F;
+    int flag = (best_move >> 12) & 0xF;
     
     // Extract the piece_id from the original NumPy board to satisfy the string format
     int src_row = src / 6;
@@ -70,7 +71,16 @@ std::string find_move_cpp(py::array_t<int> numpy_board, bool is_white) {
     int piece_id = board(src_row, src_col);
 
     // Format: "<piece_id>:<source_cell>-><target_cell>"
+    // For promotions, append "=<promoted_piece_id>"
     std::string formatted_move = std::to_string(piece_id) + ":" + index_to_cell(src) + "->" + index_to_cell(dst);
+    
+    if (flag >= 2 && flag <= 7) {
+        int promo_piece;
+        if (flag == 2 || flag == 5)      promo_piece = is_white ? 2 : 7;  // knight
+        else if (flag == 3 || flag == 6) promo_piece = is_white ? 3 : 8;  // bishop
+        else                             promo_piece = is_white ? 4 : 9;  // queen
+        formatted_move += "=" + std::to_string(promo_piece);
+    }
     
     return formatted_move;
 }
