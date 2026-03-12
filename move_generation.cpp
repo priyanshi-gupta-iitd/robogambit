@@ -31,10 +31,14 @@ bool is_in_check(const BitBoardState& state, int side) {
     // 1. Knight Attacks
     uint64_t knight_map = 0;
     uint64_t k = king_bb;
-    knight_map = knight_map | (((k & NOT_A_FILE) << 10) | ((k & NOT_AB_FILE) << 4));
-    knight_map = knight_map | (((k & NOT_F_FILE) << 14) | ((k & NOT_EF_FILE) << 8));
-    knight_map = knight_map | (((k & NOT_A_FILE) >> 14) | ((k & NOT_AB_FILE) >> 8));
-    knight_map = knight_map | (((k & NOT_F_FILE) >> 10) | ((k & NOT_EF_FILE) >> 4));
+    knight_map |= ((k & NOT_A_FILE)  << 11);
+    knight_map |= ((k & NOT_F_FILE)  << 13);
+    knight_map |= ((k & NOT_AB_FILE) << 4);
+    knight_map |= ((k & NOT_EF_FILE) << 8);
+    knight_map |= ((k & NOT_F_FILE)  >> 11);
+    knight_map |= ((k & NOT_A_FILE)  >> 13);
+    knight_map |= ((k & NOT_EF_FILE) >> 4);
+    knight_map |= ((k & NOT_AB_FILE) >> 8);
     if (knight_map & enemy_knights & BOARD_MASK) return true;
 
     // 2. Pawn Attacks
