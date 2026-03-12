@@ -76,7 +76,7 @@ static constexpr int W_SPACE      = 3;    // w_s
 static constexpr int VAL_PAWN   = 100;
 static constexpr int VAL_KNIGHT = 320;
 static constexpr int VAL_BISHOP = 330;
-static constexpr int VAL_QUEEN  = 900;
+static constexpr int VAL_QUEEN  = 950;
 static constexpr int VAL_KING   = 200000;
 
 // ===========================================================================
