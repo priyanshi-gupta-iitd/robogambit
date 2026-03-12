@@ -17,15 +17,21 @@ bool is_in_check(const BitBoardState& state, int side) {
     uint64_t enemy_knights;
     uint64_t enemy_pawns;
     uint64_t enemy_sliders;
+    uint64_t enemy_bishops;
+    uint64_t enemy_queen;
 
     if (side == 1) { // Checking Black attackers
         enemy_knights = state.b_knights;
         enemy_pawns = state.b_pawns;
         enemy_sliders = state.b_bishops | state.b_queen;
+        enemy_bishops = state.b_bishops;
+        enemy_queen = state.b_queen;
     } else { // Checking White attackers
         enemy_knights = state.w_knights;
         enemy_pawns = state.w_pawns;
         enemy_sliders = state.w_bishops | state.w_queen;
+        enemy_bishops = state.w_bishops;
+        enemy_queen = state.w_queen;
     }
 
     // 1. Knight Attacks
@@ -77,11 +83,12 @@ bool is_in_check(const BitBoardState& state, int side) {
             ray = ray & BOARD_MASK;
             if (ray == 0) break;
             
-            // Check for blockers: stop if we hit any piece (friendly or enemy)
+            // Check for enemy sliders BEFORE the blocker break so they are detected
+            if (ray & enemy_queen) return true;
+            if ((d == 7 || d == 5 || d == -7 || d == -5) && (ray & enemy_bishops)) return true;
+
+            // Check for blockers: stop ray if we hit any piece (friendly or enemy)
             if (ray & blockers) break;
-            
-            // Check for enemy sliders: return true if we hit one
-            if (ray & enemy_sliders) return true;
         }
     }
     return false;

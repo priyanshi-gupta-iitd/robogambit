@@ -12,7 +12,6 @@
 struct BitBoardState{
     uint64_t w_pawns, w_king, w_queen, w_bishops, w_knights;
     uint64_t b_pawns, b_king, b_queen, b_bishops, b_knights;
-
     uint64_t w_occ = 0;
     uint64_t b_occ = 0;
     uint64_t empty = ~0ULL;
