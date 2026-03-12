@@ -85,8 +85,47 @@ std::string find_move_cpp(py::array_t<int> numpy_board, bool is_white) {
     return formatted_move;
 }
 
+// Debug function: count legal moves available for the current position
+int count_legal_moves(py::array_t<int> numpy_board, bool is_white) {
+    BitBoardState state = {};
+    auto board = numpy_board.unchecked<2>();
+
+    // Build bitboard state from NumPy array
+    for (int row = 0; row < 6; row++) {
+        for (int col = 0; col < 6; col++) {
+            int piece_id = board(row, col);
+            if (piece_id == 0) continue;
+            
+            int idx = row * 6 + col;
+            uint64_t bit = (1ULL << idx);
+
+            switch(piece_id) {
+                case 1: state.w_pawns |= bit; state.w_occ |= bit; break;
+                case 2: state.w_knights |= bit; state.w_occ |= bit; break;
+                case 3: state.w_bishops |= bit; state.w_occ |= bit; break;
+                case 4: state.w_queen |= bit; state.w_occ |= bit; break;
+                case 5: state.w_king |= bit; state.w_occ |= bit; break;
+                case 6: state.b_pawns |= bit; state.b_occ |= bit; break;
+                case 7: state.b_knights |= bit; state.b_occ |= bit; break;
+                case 8: state.b_bishops |= bit; state.b_occ |= bit; break;
+                case 9: state.b_queen |= bit; state.b_occ |= bit; break;
+                case 10: state.b_king |= bit; state.b_occ |= bit; break;
+            }
+        }
+    }
+
+    // Apply board mask
+    const uint64_t BOARD_MASK = 0xFFFFFFFFFULL;
+    state.empty = ~(state.w_occ | state.b_occ) & BOARD_MASK;
+
+    int side = is_white ? 1 : 0;
+    std::vector<uint16_t> legal_moves = generate_moves(state, side);
+    return (int)legal_moves.size();
+}
+
 // PyBind11 Module Definition
 PYBIND11_MODULE(robogambit_cpp, m) {
     m.doc() = "RoboGambit C++ Bitboard Engine";
     m.def("get_best_move", &find_move_cpp, "Calculates the best move using C++ bitboards");
+    m.def("count_legal_moves", &count_legal_moves, "Returns the number of legal moves for the current position");
 }

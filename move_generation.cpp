@@ -31,7 +31,7 @@ bool is_in_check(const BitBoardState& state, int side) {
     // 1. Knight Attacks
     uint64_t knight_map = 0;
     uint64_t k = king_bb;
-    knight_map |= ((k & NOT_A_FILE)  << 11);
+    knight_map |= ((k & NOT_A_FILE)  << 11);   
     knight_map |= ((k & NOT_F_FILE)  << 13);
     knight_map |= ((k & NOT_AB_FILE) << 4);
     knight_map |= ((k & NOT_EF_FILE) << 8);
@@ -42,10 +42,10 @@ bool is_in_check(const BitBoardState& state, int side) {
     if (knight_map & enemy_knights & BOARD_MASK) return true;
 
     // 2. Pawn Attacks
-    if (side == 1) { // White King vs Black Pawns
-        if (((king_bb << 5) & enemy_pawns & NOT_F_FILE) | ((king_bb << 7) & enemy_pawns & NOT_A_FILE)) return true;
-    } else { // Black King vs White Pawns
-        if (((king_bb >> 5) & enemy_pawns & NOT_A_FILE) | ((king_bb >> 7) & enemy_pawns & NOT_F_FILE)) return true;
+    if (side == 1) { // White King vs Black Pawns (Black pawns attack downward)
+        if ((((king_bb & NOT_A_FILE) << 5) & enemy_pawns) | (((king_bb & NOT_F_FILE) << 7) & enemy_pawns)) return true;
+    } else { // Black King vs White Pawns (White pawns attack upward)
+        if ((((king_bb & NOT_A_FILE) >> 7) & enemy_pawns) | (((king_bb & NOT_F_FILE) >> 5) & enemy_pawns)) return true;
     }
 
     // 3. Sliding Attacks
@@ -54,13 +54,34 @@ bool is_in_check(const BitBoardState& state, int side) {
         int d = dirs[i];
         uint64_t ray = king_bb;
         while (true) {
-            if (d == 5 || d == -7 || d == -1) { if (ray & A_FILE) break; }
-            if (d == 7 || d == -5 || d == 1) { if (ray & F_FILE) break; }
-            if (d > 0) ray = ray << d; else ray = ray >> (-d);
+            // Apply file masks BEFORE shifts to prevent edge wrapping
+            if (d == 5) {       // Up-Left: apply NOT_A_FILE
+                ray = (ray & NOT_A_FILE) << 5;
+            } else if (d == 7) { // Up-Right: apply NOT_F_FILE
+                ray = (ray & NOT_F_FILE) << 7;
+            } else if (d == -5) { // Down-Right: apply NOT_F_FILE
+                ray = (ray & NOT_F_FILE) >> 5;
+            } else if (d == -7) { // Down-Left: apply NOT_A_FILE
+                ray = (ray & NOT_A_FILE) >> 7;
+            } else if (d == 6) {  // Up: no mask needed
+                ray = ray << 6;
+            } else if (d == -6) { // Down: no mask needed
+                ray = ray >> 6;
+            } else if (d == 1) {  // Right: apply NOT_F_FILE
+                ray = (ray & NOT_F_FILE) << 1;
+            } else if (d == -1) { // Left: apply NOT_A_FILE
+                ray = (ray & NOT_A_FILE) >> 1;
+            }
+            
+            // Enforce 36-bit board boundary
             ray = ray & BOARD_MASK;
             if (ray == 0) break;
-            if (ray & enemy_sliders) return true;
+            
+            // Check for blockers: stop if we hit any piece (friendly or enemy)
             if (ray & blockers) break;
+            
+            // Check for enemy sliders: return true if we hit one
+            if (ray & enemy_sliders) return true;
         }
     }
     return false;
@@ -661,6 +682,9 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
         
         // Discard the move if it results in our own King being in check 
         if (is_in_check(next_state, side) == false) {
+            // Discard illegal moves (capturing the opponent's king is illegal)
+            if (side == 1 && next_state.b_king == 0 && state.b_king != 0) continue;
+            if (side == 0 && next_state.w_king == 0 && state.w_king != 0) continue;
             legal_moves.push_back(move);
         }
     }

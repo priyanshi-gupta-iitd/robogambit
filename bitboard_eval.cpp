@@ -77,7 +77,7 @@ static constexpr int VAL_PAWN   = 100;
 static constexpr int VAL_KNIGHT = 320;
 static constexpr int VAL_BISHOP = 330;
 static constexpr int VAL_QUEEN  = 900;
-static constexpr int VAL_KING   = 20000;
+static constexpr int VAL_KING   = 200000;
 
 // ===========================================================================
 // 1. MATERIAL

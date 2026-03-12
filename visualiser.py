@@ -275,13 +275,18 @@ def main():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     if ENGINE_AVAILABLE:
+                        # Debug: count legal moves before searching
+                        legal_count = robogambit_cpp.count_legal_moves(board, is_white_turn)
+                        print(f"{'White' if is_white_turn else 'Black'} has {legal_count} legal moves")
+                        
                         print("C++ Engine is calculating...")
                         # Pass the NumPy array directly to the PyBind module
                         move_str = robogambit_cpp.get_best_move(board, is_white_turn)
                         print(f"Engine played: {move_str}")
                         
-                        board = parse_and_apply_engine_string(board, move_str)
-                        is_white_turn = not is_white_turn
+                        if move_str != "None":
+                            board = parse_and_apply_engine_string(board, move_str)
+                            is_white_turn = not is_white_turn
                     else:
                         print("Cannot calculate move: C++ module not linked.")
 
