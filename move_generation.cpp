@@ -118,10 +118,10 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
             targets |= ((single_knight & NOT_F_FILE)  << 13);
             targets |= ((single_knight & NOT_AB_FILE) << 4);
             targets |= ((single_knight & NOT_EF_FILE) << 8);
-            targets |= ((single_knight & NOT_A_FILE)  >> 11);
-            targets |= ((single_knight & NOT_F_FILE)  >> 13);
-            targets |= ((single_knight & NOT_AB_FILE) >> 4);
-            targets |= ((single_knight & NOT_EF_FILE) >> 8);
+            targets |= ((single_knight & NOT_F_FILE)  >> 11);
+            targets |= ((single_knight & NOT_A_FILE)  >> 13);
+            targets |= ((single_knight & NOT_EF_FILE) >> 4);
+            targets |= ((single_knight & NOT_AB_FILE) >> 8);
             
             // 4. Mask the targets with valid_squares to filter out friendly fire and phantom bounds
             targets &= valid_squares;

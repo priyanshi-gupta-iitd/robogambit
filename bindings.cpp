@@ -48,7 +48,7 @@ std::string find_move_cpp(py::array_t<int> numpy_board, bool is_white) {
     state.empty = ~(state.w_occ | state.b_occ) & BOARD_MASK;
 
     // 2. Call your root Minimax/Alpha-Beta search
-    int search_depth = 4; // Adjust based on your time limit
+    int search_depth = 6; // Adjust based on your time limit
     int side = is_white ? 1 : 0;
     
     // NOTE: You must ensure get_best_move is declared in move_generation.h 
