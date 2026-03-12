@@ -3,6 +3,65 @@
 // ---------------------------------------------------------------------------
 #include "move_generation.h"
 
+bool is_in_check(const BitBoardState& state, int side) {
+    uint64_t king_bb;
+    if (side == 1) {
+        king_bb = state.w_king;
+    } else {
+        king_bb = state.b_king;
+    }
+    
+    if (king_bb == 0) return false;
+
+    uint64_t blockers = state.w_occ | state.b_occ;
+    uint64_t enemy_knights;
+    uint64_t enemy_pawns;
+    uint64_t enemy_sliders;
+
+    if (side == 1) { // Checking Black attackers
+        enemy_knights = state.b_knights;
+        enemy_pawns = state.b_pawns;
+        enemy_sliders = state.b_bishops | state.b_queen;
+    } else { // Checking White attackers
+        enemy_knights = state.w_knights;
+        enemy_pawns = state.w_pawns;
+        enemy_sliders = state.w_bishops | state.w_queen;
+    }
+
+    // 1. Knight Attacks
+    uint64_t knight_map = 0;
+    uint64_t k = king_bb;
+    knight_map = knight_map | (((k & NOT_A_FILE) << 10) | ((k & NOT_AB_FILE) << 4));
+    knight_map = knight_map | (((k & NOT_F_FILE) << 14) | ((k & NOT_EF_FILE) << 8));
+    knight_map = knight_map | (((k & NOT_A_FILE) >> 14) | ((k & NOT_AB_FILE) >> 8));
+    knight_map = knight_map | (((k & NOT_F_FILE) >> 10) | ((k & NOT_EF_FILE) >> 4));
+    if (knight_map & enemy_knights & BOARD_MASK) return true;
+
+    // 2. Pawn Attacks
+    if (side == 1) { // White King vs Black Pawns
+        if (((king_bb << 5) & enemy_pawns & NOT_F_FILE) | ((king_bb << 7) & enemy_pawns & NOT_A_FILE)) return true;
+    } else { // Black King vs White Pawns
+        if (((king_bb >> 5) & enemy_pawns & NOT_A_FILE) | ((king_bb >> 7) & enemy_pawns & NOT_F_FILE)) return true;
+    }
+
+    // 3. Sliding Attacks
+    int dirs[] = {5, 7, -5, -7, 6, -6, 1, -1};
+    for (int i = 0; i < 8; i++) {
+        int d = dirs[i];
+        uint64_t ray = king_bb;
+        while (true) {
+            if (d == 5 || d == -7 || d == -1) { if (ray & A_FILE) break; }
+            if (d == 7 || d == -5 || d == 1) { if (ray & F_FILE) break; }
+            if (d > 0) ray = ray << d; else ray = ray >> (-d);
+            ray = ray & BOARD_MASK;
+            if (ray == 0) break;
+            if (ray & enemy_sliders) return true;
+            if (ray & blockers) break;
+        }
+    }
+    return false;
+}
+
 std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
     std::vector<uint16_t> moves;
     moves.reserve(40); // Pre-allocate to save memory reallocation time
@@ -513,6 +572,15 @@ std::vector<uint16_t> generate_moves(const BitBoardState& state, int side) {
             }
         }
     }
-
-    return moves;
+    std::vector<uint16_t> legal_moves;
+    for (uint16_t move : moves) {
+        BitBoardState next_state = state;
+        apply_move(next_state, move, side); // Simulate the move [cite: 8]
+        
+        // Discard the move if it results in our own King being in check 
+        if (is_in_check(next_state, side) == false) {
+            legal_moves.push_back(move);
+        }
+    }
+    return legal_moves;
 }
