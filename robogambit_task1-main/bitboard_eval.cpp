@@ -76,24 +76,25 @@ static constexpr int W_SPACE      = 3;    // w_s
 static constexpr int VAL_PAWN   = 100;
 static constexpr int VAL_KNIGHT = 320;
 static constexpr int VAL_BISHOP = 330;
-static constexpr int VAL_QUEEN  = 950;
-static constexpr int VAL_KING   = 200000;
+static constexpr int VAL_QUEEN      = 950;
+static constexpr int VAL_QUEEN_OPP  = 900;   // enemy queen worth less than ours
+static constexpr int VAL_KING       = 200000;
 
 // ===========================================================================
 // 1. MATERIAL
 // ===========================================================================
 int score_material(const BitBoardState& state) {
-    int w = VAL_PAWN   * popcount(state.w_pawns)
-          + VAL_KNIGHT * popcount(state.w_knights)
-          + VAL_BISHOP * popcount(state.w_bishops)
-          + VAL_QUEEN  * popcount(state.w_queen)
-          + VAL_KING   * popcount(state.w_king);
+    int w = VAL_PAWN       * popcount(state.w_pawns)
+          + VAL_KNIGHT     * popcount(state.w_knights)
+          + VAL_BISHOP     * popcount(state.w_bishops)
+          + VAL_QUEEN      * popcount(state.w_queen)
+          + VAL_KING       * popcount(state.w_king);
 
-    int b = VAL_PAWN   * popcount(state.b_pawns)
-          + VAL_KNIGHT * popcount(state.b_knights)
-          + VAL_BISHOP * popcount(state.b_bishops)
-          + VAL_QUEEN  * popcount(state.b_queen)
-          + VAL_KING   * popcount(state.b_king);
+    int b = VAL_PAWN       * popcount(state.b_pawns)
+          + VAL_KNIGHT     * popcount(state.b_knights)
+          + VAL_BISHOP     * popcount(state.b_bishops)
+          + VAL_QUEEN_OPP  * popcount(state.b_queen)
+          + VAL_KING       * popcount(state.b_king);
 
     return w - b;
 }
