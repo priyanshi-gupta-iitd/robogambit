@@ -5,6 +5,11 @@ import numpy as np
 
 # Import your PyBind11 C++ module (Ensure the .pyd/.so is in the same folder)
 try:
+    # On Windows, Python 3.8+ needs explicit DLL search paths for MinGW runtime
+    if sys.platform == "win32":
+        mingw_bin = os.path.join(os.environ.get("MSYS2_ROOT", r"C:\msys64"), "mingw64", "bin")
+        if os.path.isdir(mingw_bin):
+            os.add_dll_directory(mingw_bin)
     import robogambit_cpp
     ENGINE_AVAILABLE = True
 except ImportError:

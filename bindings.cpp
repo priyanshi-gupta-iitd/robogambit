@@ -4,6 +4,7 @@
 #include <vector>
 #include "bitboard_eval.h" 
 #include "move_generation.h"
+#include "minimax.h"
 
 namespace py = pybind11;
 
