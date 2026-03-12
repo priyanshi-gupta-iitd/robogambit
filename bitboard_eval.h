@@ -32,5 +32,18 @@ inline int get_src(uint16_t move) { return move & 0x3F; }
 inline int get_dst(uint16_t move) { return (move >> 6) & 0x3F; }
 inline int get_flag(uint16_t move) { return (move >> 12) & 0xF; }
 
-int evaluate(const BitBoardState& );
+// Helper: count set bits in a 64-bit integer
+inline int popcount(uint64_t bb) { return __builtin_popcountll(bb); }
+
+// Evaluation sub-components
+int score_material(const BitBoardState& state);
+int score_pst(const BitBoardState& state);
+int score_mobility(const BitBoardState& state);
+int score_pawn_structure(const BitBoardState& state);
+int score_king_safety(const BitBoardState& state);
+int score_center_control(const BitBoardState& state);
+int score_space(const BitBoardState& state);
+
+// Full evaluation
+int evaluate(const BitBoardState& state);
 #endif
