@@ -1,221 +1,353 @@
+# # import math
+# import cv2
+# import cv2.aruco as aruco
+# import numpy as np
+# import socket
+# import struct
+
+# # ── Socket config ─────────────────────────────────────────────────────────────
+# SERVER_IP   = '10.194.7.31' #update this to server's IP address
+# SERVER_PORT = 9999
+
+# # ── Camera intrinsics ─────────────────────────────────────────────────────────
+# CAMERA_MATRIX = np.array([
+#     [1030.4890823364258, 0,   960],
+#     [0, 1030.489103794098, 540],
+#     [0,                0,   1]
+# ], dtype=np.float32)
+# DIST_COEFFS = np.zeros((1, 5), dtype=np.float32)
+
+# # ── Board geometry ────────────────────────────────────────────────────────────
+# CORNER_WORLD = {
+#     21: (212.5,  212.5),
+#     22: (212.5, -212.5),
+#     23: (-212.5, -212.5),
+#     24: (-212.5,  212.5),
+# }
+# SQUARE_SIZE = 60
+# TOP_LEFT_X  = 180
+# TOP_LEFT_Y  = 180
+# BOARD_SIZE  = 6
+# PIECE_IDS   = set(range(1, 11))
+
+# # ── ArUco setup ───────────────────────────────────────────────────────────────
+# aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
+# params     = aruco.DetectorParameters()
+# params.cornerRefinementMethod      = aruco.CORNER_REFINE_SUBPIX
+# params.adaptiveThreshWinSizeMin    = 3
+# params.adaptiveThreshWinSizeMax    = 35
+# params.adaptiveThreshWinSizeStep   = 10
+# params.minMarkerPerimeterRate      = 0.03
+# params.maxMarkerPerimeterRate      = 4.0
+# params.polygonalApproxAccuracyRate = 0.03
+# params.minCornerDistanceRate       = 0.05
+# params.minDistanceToBorder         = 1
+# detector = aruco.ArucoDetector(aruco_dict, params)
+
+# # ── State ─────────────────────────────────────────────────────────────────────
+# H_matrix      = None
+# corner_pixels = {}
+# prev_board    = None
+
+
+# # ── Helpers ───────────────────────────────────────────────────────────────────
+# def pixel_to_world(H, px, py):
+#     pt = cv2.perspectiveTransform(
+#         np.array([[[px, py]]], dtype=np.float32), H
+#     )
+#     return float(pt[0][0][0]), float(pt[0][0][1])
+
+
+# def world_to_cell(wx, wy):
+#     best_row, best_col, min_dist = None, None, float('inf')
+#     for row in range(BOARD_SIZE):
+#         for col in range(BOARD_SIZE):
+#             cx = TOP_LEFT_X - (row * SQUARE_SIZE + SQUARE_SIZE / 2)
+#             cy = TOP_LEFT_Y - (col * SQUARE_SIZE + SQUARE_SIZE / 2)
+#             d  = math.hypot(wx - cx, wy - cy)
+#             if d < min_dist:
+#                 min_dist, best_row, best_col = d, row, col
+#     return best_row, best_col
+
+
+# def build_board(ids, corners, H):
+#     board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
+#     for i, mid in enumerate(ids.flatten()):
+#         if mid not in PIECE_IDS:
+#             continue
+#         c  = corners[i][0]
+#         px = float(np.mean(c[:, 0]))
+#         py = float(np.mean(c[:, 1]))
+#         wx, wy   = pixel_to_world(H, px, py)
+#         row, col = world_to_cell(wx, wy)
+#         if row is not None:
+#             board[row][col] = mid
+#     return board
+
+
+# def recv_frame(sock, data, payload_size):
+#     """Read one frame from the socket stream. Returns (frame, data_remainder)."""
+#     # Read header
+#     while len(data) < payload_size:
+#         packet = sock.recv(4096)
+#         if not packet:
+#             return None, data
+#         data += packet
+
+#     packed_msg_size = data[:payload_size]
+#     data            = data[payload_size:]
+#     msg_size        = struct.unpack("Q", packed_msg_size)[0]
+
+#     # Read frame bytes
+#     while len(data) < msg_size:
+#         packet = sock.recv(4096)
+#         if not packet:
+#             return None, data
+#         data += packet
+
+#     frame_data = data[:msg_size]
+#     data       = data[msg_size:]
+
+#     frame = cv2.imdecode(
+#         np.frombuffer(frame_data, dtype=np.uint8),
+#         cv2.IMREAD_COLOR
+#     )
+#     return frame, data
+
+
+# # ── Connect ───────────────────────────────────────────────────────────────────
+# print(f"Connecting to {SERVER_IP}:{SERVER_PORT} ...")
+# client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# client_socket.connect((SERVER_IP, SERVER_PORT))
+# print("Connected ✓")
+
+# payload_size = struct.calcsize("Q")
+# data_buffer  = b""
+
+# # ── Main loop ─────────────────────────────────────────────────────────────────
+# try:
+#     while True:
+#         frame, data_buffer = recv_frame(client_socket, data_buffer, payload_size)
+#         if frame is None:
+#             print("Stream ended or connection lost.")
+#             break
+
+#         frame        = cv2.undistort(frame, CAMERA_MATRIX, DIST_COEFFS, None, CAMERA_MATRIX)
+#         gray         = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+#         corners, ids, _ = detector.detectMarkers(gray)
+
+#         board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
+
+#         if ids is not None:
+
+#             # Update corner pixels every frame
+#             for i, mid in enumerate(ids.flatten()):
+#                 if mid in CORNER_WORLD:
+#                     corner_pixels[mid] = np.mean(corners[i][0], axis=0)
+
+#             # Lock homography once all 4 corners seen
+#             if H_matrix is None and len(corner_pixels) == 4:
+#                 pixel_pts = np.array([corner_pixels[m] for m in [21, 22, 23, 24]], dtype=np.float32)
+#                 world_pts = np.array([CORNER_WORLD[m]  for m in [21, 22, 23, 24]], dtype=np.float32)
+#                 H_matrix, _ = cv2.findHomography(pixel_pts, world_pts)
+#                 print("Homography locked ✓")
+
+#             # Build board state
+#             if H_matrix is not None:
+#                 board = build_board(ids, corners, H_matrix)
+
+#         # Print only when board changes
+#         if prev_board is None or not np.array_equal(board, prev_board):
+#             print("\nBoard state:\n", board)
+#             prev_board = board.copy()
+
+#         cv2.imshow("ArUco Detection", frame)
+#         if cv2.waitKey(1) & 0xFF == 27:   # ESC to quit
+#             break
+
+# except KeyboardInterrupt:
+#     print("\nInterrupted.")
+
+# finally:
+#     client_socket.close()
+#     cv2.destroyAllWindows()
+#     print("Disconnected.")
+
 import math
 import cv2
+import cv2.aruco as aruco
 import numpy as np
-import sys
+import socket
+import struct
+
+# ── Socket config ─────────────────────────────────────────────────────────────
+SERVER_IP   = '10.194.7.31' #update this to server's IP address
+SERVER_PORT = 9999
+
+# ── Camera intrinsics ─────────────────────────────────────────────────────────
+CAMERA_MATRIX = np.array([
+    [1030.4890823364258, 0,   960],
+    [0, 1030.489103794098, 540],
+    [0,                0,   1]
+], dtype=np.float32)
+DIST_COEFFS = np.zeros((1, 5), dtype=np.float32)
+
+# ── Board geometry ────────────────────────────────────────────────────────────
+CORNER_WORLD = {
+    21: (212.5,  212.5),
+    22: (212.5, -212.5),
+    23: (-212.5, -212.5),
+    24: (-212.5,  212.5),
+}
+SQUARE_SIZE = 60
+TOP_LEFT_X  = 180
+TOP_LEFT_Y  = 180
+BOARD_SIZE  = 6
+PIECE_IDS   = set(range(1, 11))
+
+# ── ArUco setup ───────────────────────────────────────────────────────────────
+aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
+params     = aruco.DetectorParameters()
+params.cornerRefinementMethod      = aruco.CORNER_REFINE_SUBPIX
+params.adaptiveThreshWinSizeMin    = 3
+params.adaptiveThreshWinSizeMax    = 35
+params.adaptiveThreshWinSizeStep   = 10
+params.minMarkerPerimeterRate      = 0.03
+params.maxMarkerPerimeterRate      = 4.0
+params.polygonalApproxAccuracyRate = 0.03
+params.minCornerDistanceRate       = 0.05
+params.minDistanceToBorder         = 1
+detector = aruco.ArucoDetector(aruco_dict, params)
+
+# ── State ─────────────────────────────────────────────────────────────────────
 
 
-class RoboGambit_Perception:
-
-    def __init__(self):
-        # PARAMETERS - Camera intrinsics provided by organisers (DO NOT MODIFY)
-        self.camera_matrix = np.array([
-            [1030.4890823364258, 0, 960],
-            [0, 1030.489103794098, 540],
-            [0, 0, 1]
-        ], dtype=np.float32)
-
-        self.dist_coeffs = np.zeros((1, 5))
-
-        # INTERNAL VARIABLES
-        self.corner_world = {
-            21: (350, 350),
-            22: (350, -350),
-            23: (-350, -350),
-            24: (-350, 350)
-        }
-        self.corner_pixels = {}
-        self.pixel_matrix = []
-        self.world_matrix = []
-
-        self.H_matrix = None
-
-        self.board = np.zeros((6, 6), dtype=int)
-
-        # ARUCO DETECTOR
-        self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-        self.aruco_params = cv2.aruco.DetectorParameters()
-        self.detector = cv2.aruco.ArucoDetector(self.aruco_dict,self.aruco_params)
-
-        print("Perception Initialized")
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def pixel_to_world(H, px, py):
+    pt = cv2.perspectiveTransform(
+        np.array([[[px, py]]], dtype=np.float32), H
+    )
+    return float(pt[0][0][0]), float(pt[0][0][1])
 
 
-    # DO NOT MODIFY THIS FUNCTION
-    def prepare_image(self, image):
-        """
-        DO NOT MODIFY.
-        Performs camera undistortion and grayscale conversion.
-        """
-        undistorted_image = cv2.undistort(image,self.camera_matrix,self.dist_coeffs,None,self.camera_matrix)
-        gray_image = cv2.cvtColor(undistorted_image,cv2.COLOR_BGR2GRAY)
-        return undistorted_image, gray_image
+def world_to_cell(wx, wy):
+    best_row, best_col, min_dist = None, None, float('inf')
+    for row in range(BOARD_SIZE):
+        for col in range(BOARD_SIZE):
+            cx = TOP_LEFT_X - (row * SQUARE_SIZE + SQUARE_SIZE / 2)
+            cy = TOP_LEFT_Y - (col * SQUARE_SIZE + SQUARE_SIZE / 2)
+            d  = math.hypot(wx - cx, wy - cy)
+            if d < min_dist:
+                min_dist, best_row, best_col = d, row, col
+    return best_row, best_col
 
 
-    # TODO: IMPLEMENT PIXEL → WORLD TRANSFORMATION
-    def pixel_to_world(self, pixel_x, pixel_y):
-        """
-        Convert pixel coordinates into world coordinates using homography.
-        Steps:
-        1. Ensure homography matrix has been computed.
-        2. Format pixel point for cv2.perspectiveTransform().
-        3. Return transformed world coordinates.
-        """
-        if self.H_matrix is None:
-            return None, None
-
-        pixel_point = np.array([[[pixel_x, pixel_y]]], dtype=np.float32)
-        world_point = cv2.perspectiveTransform(pixel_point, self.H_matrix)
-
-        wx = world_point[0][0][0]
-        wy = world_point[0][0][1]
-        return wx, wy
-    
-
-    # PARTICIPANTS MODIFY THIS FUNCTION
-    def process_image(self, image):
-        """
-        Main perception pipeline.
-        Participants must implement:
-        - ArUco detection
-        - Homography computation
-        - Pixel → world conversion
-        - Board reconstruction
-        """
-
-        self.board[:] = 0
-
-        # Preprocess image (Do not modify)
-        undistorted_image, gray_image = self.prepare_image(image)
-
-        # TODO: Detect ArUco markers (uncomment or write your own code)
-
-        # for my understanding lol
-        # ids will return flattened list of ids of detected aruco markers
-        # corners will be a list which represents shape of each marker like (1,4,2)
-        # 1 for contour, 4 for corners of markers, 2 for x,y coords
-        corners, ids, rej = self.detector.detectMarkers(gray_image)
-        if ids is None:
-            return 
-        ids = ids.flatten()
-        cv2.aruco.drawDetectedMarkers(undistorted_image,corners,ids)
+def build_board(ids, corners, H):
+    board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
+    for i, mid in enumerate(ids.flatten()):
+        if mid not in PIECE_IDS:
+            continue
+        c  = corners[i][0]
+        px = float(np.mean(c[:, 0]))
+        py = float(np.mean(c[:, 1]))
+        wx, wy   = pixel_to_world(H, px, py)
+        row, col = world_to_cell(wx, wy)
+        if row is not None:
+            board[row][col] = mid
+    return board
 
 
-        # TODO: Extract corner marker pixels
+def recv_frame(sock, data, payload_size):
+    """Read one frame from the socket stream. Returns (frame, data_remainder)."""
+    # Read header
+    while len(data) < payload_size:
+        packet = sock.recv(4096)
+        if not packet:
+            return None, data
+        data += packet
+
+    packed_msg_size = data[:payload_size]
+    data            = data[payload_size:]
+    msg_size        = struct.unpack("Q", packed_msg_size)[0]
+
+    # Read frame bytes
+    while len(data) < msg_size:
+        packet = sock.recv(4096)
+        if not packet:
+            return None, data
+        data += packet
+
+    frame_data = data[:msg_size]
+    data       = data[msg_size:]
+
+    frame = cv2.imdecode(
+        np.frombuffer(frame_data, dtype=np.uint8),
+        cv2.IMREAD_COLOR
+    )
+    return frame, data
 
 
-        # for my understanding yet again lol
-        # loop i -> index, marker_id -> id of detected (possible) markers
-        # if id matches the id in given set -> calc mean of x and y coords (for centers)
-        # and save it foro each marker
-        for i, marker_id in enumerate(ids):
-            if marker_id in self.corner_world:
-                cx = int(np.mean(corners[i][0][:, 0]))
-                cy = int(np.mean(corners[i][0][:, 1]))
-                self.corner_pixels[marker_id] = (cx, cy)
+# ── Connect ───────────────────────────────────────────────────────────────────
+def start_perception_loop(queue):
+    print(f"Connecting to {SERVER_IP}:{SERVER_PORT} ...")
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_socket.connect((SERVER_IP, SERVER_PORT))
+    print("Connected ✓")
 
-        # TODO: Build pixel and world matrices
+    payload_size = struct.calcsize("Q")
+    data_buffer  = b""
+    H_matrix      = None
+    corner_pixels = {}
+    prev_board    = None
+# ── Main loop ─────────────────────────────────────────────────────────────────
 
-        # for my understanding yet(yet) again lol
-        # basically after recieving corner_pixels, we define matrices
-        # we store center coords px, py and then append them
-        # we append world coords
-        if len(self.corner_pixels) == 4:
-            self.pixel_matrix = []
-            self.world_matrix = []
-            for marker_id, (wx, wy) in self.corner_world.items():
-                px, py = self.corner_pixels[marker_id]
-                self.pixel_matrix.append([px, py])
-                self.world_matrix.append([wx, wy])
+    try:
+        while True:
+            frame, data_buffer = recv_frame(client_socket, data_buffer, payload_size)
+            if frame is None:
+                print("Stream ended or connection lost.")
+                break
 
-        pixel_pts = np.array(self.pixel_matrix, dtype=np.float32)
-        world_pts = np.array(self.world_matrix, dtype=np.float32)
+            frame        = cv2.undistort(frame, CAMERA_MATRIX, DIST_COEFFS, None, CAMERA_MATRIX)
+            gray         = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            corners, ids, _ = detector.detectMarkers(gray)
 
-        # TODO: Compute homography matrix
+            board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
 
-        #for my understanding yet(yet(yet)) again lol
-        # basically H_matrix is transformation matrix that calculates geometric
-        # differences between pixels and world coords
-        self.H_matrix, _ = cv2.findHomography(pixel_pts, world_pts)
+            if ids is not None:
 
-        # TODO: Convert piece markers to world coordinates
+                # Update corner pixels every frame
+                for i, mid in enumerate(ids.flatten()):
+                    if mid in CORNER_WORLD:
+                        corner_pixels[mid] = np.mean(corners[i][0], axis=0)
 
-        # for my understanding yet(yet(yet(yet))) again lol
-        # this is simple, same process for board pieces.
-        for i, marker_id in enumerate(ids):
-            if 1<=marker_id<= 10:
-                cx = int(np.mean(corners[i][0][:, 0]))
-                cy = int(np.mean(corners[i][0][:, 1]))
-                wx, wy = self.pixel_to_world(cx, cy)
-                if wx is not None:
-                    self.place_piece_on_board(marker_id, wx, wy)
+                # Lock homography once all 4 corners seen
+                if H_matrix is None and len(corner_pixels) == 4:
+                    pixel_pts = np.array([corner_pixels[m] for m in [21, 22, 23, 24]], dtype=np.float32)
+                    world_pts = np.array([CORNER_WORLD[m]  for m in [21, 22, 23, 24]], dtype=np.float32)
+                    H_matrix, _ = cv2.findHomography(pixel_pts, world_pts)
+                    print("Homography locked ✓")
 
-        # Visualization (Do not modify)
-        res = cv2.resize(undistorted_image, (1152,648))
-        cv2.imshow("Detected Markers", res)
-        self.visualize_board()
+                # Build board state
+                if H_matrix is not None:
+                    board = build_board(ids, corners, H_matrix)
 
+            # Print only when board changes
+            if prev_board is None or not np.array_equal(board, prev_board):
+                print("\nBoard state:\n", board)
+                prev_board = board.copy()
+                if queue.full():
+                    queue.get_nowait()
+                queue.put(board.copy())
 
-    # TODO: IMPLEMENT BOARD PLACEMENT
-    def place_piece_on_board(self, piece_id, x_coord, y_coord):
+            # cv2.imshow("ArUco Detection", frame)
+            # if cv2.waitKey(1) & 0xFF == 27:   # ESC to quit
+            #     break
 
-        """
-        Places detected piece on the closest board square.
+    except KeyboardInterrupt:
+        print("\nInterrupted.")
 
-        Board definition:
-
-        6x6 grid
-        top-left corner = (300,300)
-        square size = 100mm
-        """
-
-        col = int(round(300-x_coord)/100)
-        row = int(round(300-y_coord)/100)
-
-        print(f"Piece {piece_id} → row {row}, col {col}")
-
-        if 0<=row<6 and 0<=col<6:
-            self.board[row][col] = piece_id
-
-
-    # DO NOT MODIFY THIS FUNCTION
-    def visualize_board(self):
-        """
-        Draw a simple 6x6 board with detected piece IDs
-        """
-        cell_size = 80
-        board_img = np.ones((6*cell_size,6*cell_size,3),dtype=np.uint8) * 255
-
-        for r in range(6):
-            for c in range(6):
-                x1 = c*cell_size
-                y1 = r*cell_size
-                x2 = x1+cell_size
-                y2 = y1+cell_size
-                cv2.rectangle(board_img,(x1,y1),(x2,y2),(0,0,0),2)
-
-                piece = int(self.board[r][c])
-                if piece != 0:
-                    cv2.putText(board_img,str(piece),(x1+25,y1+50),cv2.FONT_HERSHEY_SIMPLEX,1,(0,0,255),2)
-
-        cv2.imshow("Game Board", board_img)
-
-
-# DO NOT MODIFY
-def main():
-    # To run code, use python/python3 perception.py path/to/image.png
-    if len(sys.argv) < 2:
-        print("Usage: python perception.py image.png")
-        return
-
-    image_path = sys.argv[1]
-    image = cv2.imread(image_path)
-    if image is None:
-        print("Failed to load image")
-        return
-
-    perception = RoboGambit_Perception()
-    perception.process_image(image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-if __name__ == "__main__":
-    main()
+    finally:
+        client_socket.close()
+        # cv2.destroyAllWindows()
+        print("Disconnected.")
